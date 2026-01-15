@@ -1,0 +1,46 @@
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: #ffffff;
+  min-height: 100vh;
+  color: #000000;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Leaflet map styles */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 1;
+  background-color: #ffffff;
+}
+
+/* Make map tiles black and white - subtle filter to avoid blur */
+.leaflet-container img.leaflet-tile {
+  filter: grayscale(100%) contrast(1.2) !important;
+}
+
+/* Make map controls black and white */
+.leaflet-control-container {
+  filter: grayscale(100%) !important;
+}
+
