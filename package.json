@@ -11,7 +11,8 @@
     "geocode-missing": "tsx scripts/geocode-missing.ts",
     "import-musicbrainz-json": "tsx scripts/import-musicbrainz-json.ts",
     "import-musicbrainz-dump": "tsx scripts/import-musicbrainz-dump.ts",
-    "sync-json-from-musicbrainz": "tsx scripts/sync-json-from-musicbrainz.ts"
+    "sync-json-from-musicbrainz": "tsx scripts/sync-json-from-musicbrainz.ts",
+    "export-musicbrainz-json": "tsx scripts/export-musicbrainz-to-json.ts"
   },
   "dependencies": {
     "axios": "^1.6.2",

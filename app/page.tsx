@@ -78,16 +78,12 @@ export default function Home() {
     setError(null)
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim() }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to verify username')
+      // Client-side verification - call Last.fm API directly
+      const { getUserInfo } = await import('@/lib/lastfmClient')
+      const userInfo = await getUserInfo(username.trim())
+      
+      if (!userInfo.exists) {
+        throw new Error('Last.fm username not found. Please check your username and try again.')
       }
 
       localStorage.setItem('lastfm_username', username.trim())
@@ -110,34 +106,90 @@ export default function Home() {
     setLoading(true)
     setError(null)
     setLoadingProgress('Fetching your listening data from Last.fm...')
+    
+    const savedUsername = localStorage.getItem('lastfm_username')
+    if (!savedUsername) {
+      setError('Please log in first')
+      setLoading(false)
+      return
+    }
+    
     try {
-      // Fetch artists first (this is now instant)
-      const response = await fetch('/api/listening-data')
-      const data = await response.json()
+      // Client-side: Fetch artists directly from Last.fm API
+      const { getTopArtists, getRecentTracks } = await import('@/lib/lastfmClient')
+      const { getLocationFromMusicBrainzDB } = await import('@/lib/musicbrainzDB')
+      const { saveLocationToDB } = await import('@/lib/artistLocationDB')
       
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch listening data')
+      setLoadingProgress('Fetching top artists from Last.fm...')
+      
+      // Fetch all artists
+      const [topArtistsOverall, recentTracks] = await Promise.allSettled([
+        getTopArtists(savedUsername, 'overall', 1000),
+        getRecentTracks(savedUsername, 1000),
+      ])
+      
+      const allArtists = new Map<string, Artist>()
+      
+      // Process top artists
+      if (topArtistsOverall.status === 'fulfilled') {
+        topArtistsOverall.value.forEach((artist: any) => {
+          const artistName = artist.name
+          if (artistName) {
+            const existing = allArtists.get(artistName) || {
+              id: artistName.toLowerCase().trim(),
+              name: artistName,
+              playcount: 0,
+              genres: [],
+            }
+            existing.playcount = Math.max(
+              existing.playcount || 0,
+              parseInt(artist.playcount || '0', 10)
+            )
+            allArtists.set(artistName, existing)
+          }
+        })
       }
       
-      console.log('API Response:', data)
+      // Process recent tracks
+      if (recentTracks.status === 'fulfilled') {
+        recentTracks.value.forEach((track: any) => {
+          const artistName = track.artist?.['#text'] || track.artist
+          if (artistName && !allArtists.has(artistName)) {
+            allArtists.set(artistName, {
+              id: artistName.toLowerCase().trim(),
+              name: artistName,
+              playcount: 0,
+              genres: [],
+            })
+          }
+        })
+      }
       
-      if (data.artists && data.artists.length > 0) {
-        // Set artists immediately (some locations already included for top 50)
-        setArtists(data.artists)
-        setLoadingProgress('')
-        setLoading(false)
-        
-        // Always fetch remaining locations in background for all artists
-        // Start immediately - don't wait
-        console.log(`Starting background location fetch for ${data.artists.length} artists`)
-        fetchLocationsInBackground(data.artists)
-      } else {
-        setArtists([])
-        setLoadingProgress('')
-        setError(
-          data.error || `No artists found. Make sure your Last.fm username is correct and you have listening history.`
-        )
-        setLoading(false)
+      const artistsArray = Array.from(allArtists.values())
+        .sort((a, b) => (b.playcount || 0) - (a.playcount || 0))
+      
+      console.log(`Found ${artistsArray.length} total artists from Last.fm`)
+      
+      // Check MusicBrainz JSON for locations (client-side)
+      const { getLocationFromMusicBrainzClient } = await import('@/lib/musicbrainzClient')
+      
+      const artistsWithLocations = await Promise.all(
+        artistsArray.map(async (artist) => {
+          const location = await getLocationFromMusicBrainzClient(artist.name)
+          return {
+            ...artist,
+            location: location || undefined,
+          }
+        })
+      )
+      
+      setArtists(artistsWithLocations)
+      setLoadingProgress('')
+      setLoading(false)
+      
+      // Fetch locations in background
+      if (artistsWithLocations.length > 0) {
+        fetchLocationsInBackground(artistsWithLocations)
       }
     } catch (err) {
       console.error('Error fetching listening data:', err)
@@ -149,110 +201,55 @@ export default function Home() {
 
   const fetchLocationsInBackground = async (artists: Artist[]) => {
     try {
-      // Process ALL artists - even if they have locations, we want to make sure we have all of them
-      // This ensures we catch any that might have been missed
-      console.log(`Starting background location fetch for ALL ${artists.length} artists`)
+      // Client-side: Check MusicBrainz JSON for any artists that don't have locations yet
+      const { getLocationFromMusicBrainzClient } = await import('@/lib/musicbrainzClient')
       
-      // Fetch locations for all artists in batches, updating UI progressively
-      const batchSize = 25 // Very small batches to avoid rate limiting Wikipedia/APIs
-      let startIndex = 0
-      let totalLocationsFound = 0
-      let batchNumber = 0
-      const totalArtists = artists.length
+      const artistsNeedingLocations = artists.filter(a => !a.location)
+      console.log(`Checking ${artistsNeedingLocations.length} artists for locations in MusicBrainz JSON...`)
       
-      // Update progress indicator
-      setLoadingProgress(`Fetching locations... (0/${totalArtists} artists processed)`)
-      
-      // Process batches with a small delay between them to avoid overwhelming the server
-      while (startIndex < totalArtists) {
-        try {
-          batchNumber++
-          const batchStart = startIndex
-          const batchEnd = Math.min(startIndex + batchSize, totalArtists)
-          console.log(`Fetching batch ${batchNumber}: artists ${batchStart} to ${batchEnd} (${batchEnd - batchStart} artists)`)
-          
-          // Update progress
-          setLoadingProgress(`Fetching locations... (${batchEnd}/${totalArtists} artists processed, ${totalLocationsFound} locations found)`)
-          
-          // Create abort controller for timeout
-          const controller = new AbortController()
-          const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 second timeout per batch
-          
-          const response = await fetch('/api/locations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              artists: artists.map(a => ({ name: a.name })),
-              startIndex,
-              batchSize,
-            }),
-            signal: controller.signal,
-          })
-          
-          clearTimeout(timeoutId)
-          
-          if (response.ok) {
-            const data = await response.json()
-            const locationMap = new Map(
-              data.locations.map((item: { name: string; location: any }) => [item.name, item.location])
-            )
-            
-            // Count how many locations we found in this batch
-            const locationsFound = Array.from(locationMap.values()).filter(loc => loc && typeof loc === 'object' && 'lat' in loc).length
-            totalLocationsFound += locationsFound
-            console.log(`Batch ${startIndex}-${startIndex + batchSize}: Found ${locationsFound} new locations (${totalLocationsFound} total)`)
-            
-            // Update artists with locations progressively
-            setArtists(prevArtists => 
-              prevArtists.map(artist => {
-                const newLocation = locationMap.get(artist.name)
-                // Only update if we have a valid location with lat/lng
-                if (newLocation && typeof newLocation === 'object' && 'lat' in newLocation && 'lng' in newLocation) {
-                  return {
-                    ...artist,
-                    location: newLocation as Artist['location'],
-                  }
-                }
-                return artist
-              })
-            )
-            
-            // Always continue to next batch - don't rely on hasMore flag
-            startIndex = data.nextIndex || (startIndex + batchSize)
-            
-            // Check if we've processed all artists
-            if (startIndex >= totalArtists) {
-              console.log(`Finished fetching all locations. Total: ${totalLocationsFound} locations found out of ${totalArtists} artists`)
-              break
-            }
-            
-            // Small delay between batches to avoid overwhelming the server
-            await new Promise(resolve => setTimeout(resolve, 200))
-          } else {
-            const errorText = await response.text()
-            console.warn(`Error response ${response.status} for batch starting at ${startIndex}: ${errorText}`)
-            // Continue to next batch even on error
-            startIndex += batchSize
-            await new Promise(resolve => setTimeout(resolve, 500)) // Wait a bit before retrying
-          }
-        } catch (err: any) {
-          if (err.name === 'AbortError') {
-            console.warn(`Batch starting at ${startIndex} timed out, continuing...`)
-          } else {
-            console.error(`Error fetching batch starting at ${startIndex}:`, err.message || err)
-          }
-          // Continue to next batch even on error
-          startIndex += batchSize
-          await new Promise(resolve => setTimeout(resolve, 500)) // Wait a bit before retrying
-        }
+      if (artistsNeedingLocations.length === 0) {
+        return
       }
       
-      console.log(`Background location fetch completed. Processed ${startIndex}/${totalArtists} artists, found ${totalLocationsFound} total locations`)
+      // Process in batches to update UI progressively
+      const batchSize = 50
+      let processed = 0
+      let found = 0
       
-      // Final update to show all locations found
-      const finalCount = artists.filter(a => a.location).length
-      console.log(`Final count: ${finalCount} artists with locations out of ${totalArtists} total`)
-      setLoadingProgress('') // Clear progress when done
+      for (let i = 0; i < artistsNeedingLocations.length; i += batchSize) {
+        const batch = artistsNeedingLocations.slice(i, i + batchSize)
+        
+        const batchResults = await Promise.all(
+          batch.map(async (artist) => {
+            const location = await getLocationFromMusicBrainzClient(artist.name)
+            return { artist, location }
+          })
+        )
+        
+        // Update artists with found locations
+        setArtists(prevArtists => 
+          prevArtists.map(artist => {
+            const result = batchResults.find(r => r.artist.name === artist.name)
+            if (result && result.location) {
+              found++
+              return {
+                ...artist,
+                location: result.location,
+              }
+            }
+            return artist
+          })
+        )
+        
+        processed += batch.length
+        setLoadingProgress(`Loading locations... (${processed}/${artistsNeedingLocations.length} checked, ${found} found)`)
+        
+        // Small delay to keep UI responsive
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      
+      setLoadingProgress('')
+      console.log(`Location check complete: Found ${found} locations`)
     } catch (err) {
       console.error('Fatal error in background location fetch:', err)
       setLoadingProgress('') // Clear progress on error

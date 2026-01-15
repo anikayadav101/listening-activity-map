@@ -39,3 +39,6 @@ next-env.d.ts
 /data/artist-locations.json
 /data/musicbrainz/
 
+# Public JSON is large but needed for GitHub Pages
+# /public/musicbrainz-locations.json
+
