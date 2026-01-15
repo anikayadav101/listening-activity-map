@@ -6,7 +6,7 @@
 import axios from 'axios'
 import { saveLocationToMusicBrainzDB, getArtistsWithoutCoordinates } from '../lib/musicbrainzDB'
 import { getAllLocations } from '../lib/artistLocationDB'
-import { getCoordinatesForArea } from '../lib/artistLocation'
+// import { getCoordinatesForArea } from '../lib/artistLocation' // Not used in static build
 
 // Rate limiting for MusicBrainz (1 request per second)
 let lastRequest = 0
@@ -99,7 +99,8 @@ async function processArtist(artistName: string): Promise<boolean> {
       
       if (locationArea?.name) {
         // Try to get coordinates
-        const coordinates = await getCoordinatesForArea(locationArea.name)
+        // const coordinates = await getCoordinatesForArea(locationArea.name) // Not used in static build
+        // coordinates not available in static build
         
         saveLocationToMusicBrainzDB(
           artistName,
@@ -107,19 +108,15 @@ async function processArtist(artistName: string): Promise<boolean> {
           area?.name || null,
           beginArea?.name || null,
           countryCode || null,
-          coordinates?.lat || null,
-          coordinates?.lng || null,
+          null, // lat - not available in static build
+          null, // lng - not available in static build
           beginArea?.name || null,
           area?.name || countryCode || null
         )
         
-        if (coordinates) {
-          console.log(`✓ ${artistName} -> ${locationArea.name} (${coordinates.lat}, ${coordinates.lng})`)
-          return true
-        } else {
-          console.log(`⚠ ${artistName} -> ${locationArea.name} (no coordinates)`)
-          return true
-        }
+        // Coordinates check removed for static build
+        console.log(`✓ ${artistName} -> ${locationArea.name}`)
+        return true
       }
     }
     

@@ -117,8 +117,6 @@ export default function Home() {
     try {
       // Client-side: Fetch artists directly from Last.fm API
       const { getTopArtists, getRecentTracks } = await import('@/lib/lastfmClient')
-      const { getLocationFromMusicBrainzDB } = await import('@/lib/musicbrainzDB')
-      const { saveLocationToDB } = await import('@/lib/artistLocationDB')
       
       setLoadingProgress('Fetching top artists from Last.fm...')
       
@@ -173,15 +171,14 @@ export default function Home() {
       // Check MusicBrainz JSON for locations (client-side)
       const { getLocationFromMusicBrainzClient } = await import('@/lib/musicbrainzClient')
       
-      const artistsWithLocations = await Promise.all(
-        artistsArray.map(async (artist) => {
-          const location = await getLocationFromMusicBrainzClient(artist.name)
-          return {
-            ...artist,
-            location: location || undefined,
-          }
-        })
-      )
+      // Load locations from JSON file (client-side only)
+      const artistsWithLocations = artistsArray.map((artist) => {
+        // Locations will be loaded in background - don't await here
+        return {
+          ...artist,
+          location: undefined, // Will be populated in background
+        }
+      })
       
       setArtists(artistsWithLocations)
       setLoadingProgress('')

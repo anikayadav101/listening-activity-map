@@ -99,7 +99,8 @@ function MapController({
                 ) {
                   // Check if this marker's popup contains the artist name
                   const popup = layer.getPopup()
-                  if (popup && popup.getContent()?.includes(artist.name)) {
+                  const content = popup?.getContent()
+                  if (popup && typeof content === 'string' && content.includes(artist.name)) {
                     layer.openPopup()
                   }
                 }
