@@ -12,7 +12,10 @@ async function loadLocationData(): Promise<Record<string, { lat: number; lng: nu
   
   try {
     // Load from public JSON file
-    const basePath = process.env.NODE_ENV === 'production' ? '/listening-activity-map' : ''
+    // Use relative path - works for both GitHub Pages subpath and custom domains
+    const basePath = typeof window !== 'undefined' && window.location.pathname.includes('/listening-activity-map') 
+      ? '/listening-activity-map' 
+      : ''
     const response = await fetch(`${basePath}/musicbrainz-locations.json`)
     if (response.ok) {
       locationCache = await response.json()

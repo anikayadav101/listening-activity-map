@@ -32,3 +32,46 @@ These won't work on GitHub Pages. If you still want to try:
 
 **Recommendation: Use Vercel for the best experience.**
 
+## Custom Domain Setup
+
+To use a custom domain with GitHub Pages:
+
+### Step 1: Configure Domain in GitHub
+1. Go to your repository: https://github.com/anikayadav101/listening-activity-map
+2. Click **Settings** → **Pages**
+3. Under **Custom domain**, enter your domain (e.g., `listeningmap.com` or `www.listeningmap.com`)
+4. Check **Enforce HTTPS** (recommended)
+5. Click **Save**
+
+GitHub will automatically create a `CNAME` file in your repository.
+
+### Step 2: Configure DNS Records
+
+You need to add DNS records at your domain registrar (where you bought the domain):
+
+#### Option A: Apex Domain (e.g., `listeningmap.com`)
+Add these A records pointing to GitHub Pages IPs:
+```
+185.199.108.153
+185.199.109.153
+185.199.110.153
+185.199.111.153
+```
+
+#### Option B: Subdomain (e.g., `www.listeningmap.com`)
+Add a CNAME record:
+```
+Type: CNAME
+Name: www (or @)
+Value: anikayadav101.github.io
+```
+
+### Step 3: Wait for DNS Propagation
+- DNS changes can take 24-48 hours to propagate
+- You can check propagation status at: https://www.whatsmydns.net/
+
+### Step 4: Verify
+Once DNS propagates, your site will be accessible at your custom domain!
+
+**Note:** If you use a custom domain, you may need to update the `basePath` in `next.config.js` to remove the `/listening-activity-map` prefix.
+
